@@ -1,15 +1,21 @@
-
 from pathlib import Path
 
 import pandas as pd
 import pytest
 
 from src.quality_checks import (
+    QualityCheckConfig,
     QualityCheckError,
     analyze_constant_columns,
     analyze_duplicates,
+    analyze_high_cardinality_categories,
     analyze_missing_values,
+    analyze_near_constant_columns,
+    analyze_numeric_outliers,
+    analyze_potential_identifiers,
     get_dataset_overview,
+    run_advanced_quality_checks,
+    run_all_quality_checks,
     run_basic_quality_checks,
 )
 
@@ -180,6 +186,197 @@ def test_constant_and_all_missing_columns() -> None:
     assert "variable" not in result.index
 
 
+def test_near_constant_report_matches_sample(
+    sample_dataframe: pd.DataFrame,
+) -> None:
+    report = analyze_near_constant_columns(
+        sample_dataframe
+    )
+
+    assert report["column"].tolist() == [
+        "account_status"
+    ]
+    assert report.iloc[0]["dominant_value"] == "Active"
+    assert report.iloc[0]["dominant_count"] == 205
+    assert report.iloc[0]["dominance_percentage"] == 98.56
+    assert report.iloc[0]["severity"] == "MEDIUM"
+
+
+def test_near_constant_excludes_constant_columns() -> None:
+    dataframe = pd.DataFrame(
+        {
+            "constant": ["x"] * 100,
+            "near_constant": ["x"] * 99 + ["y"],
+            "variable": ["x"] * 50 + ["y"] * 50,
+        }
+    )
+
+    report = analyze_near_constant_columns(dataframe)
+
+    assert report["column"].tolist() == [
+        "near_constant"
+    ]
+    assert report.iloc[0]["severity"] == "HIGH"
+
+
+def test_potential_identifier_report_matches_sample(
+    sample_dataframe: pd.DataFrame,
+) -> None:
+    report = analyze_potential_identifiers(
+        sample_dataframe
+    )
+
+    assert set(report["column"]) == {
+        "Unnamed: 0",
+        "customer_id",
+        "referral_code",
+    }
+
+    result = report.set_index("column")
+
+    assert result.loc[
+        "customer_id", "unique_percentage"
+    ] == 96.15
+    assert bool(result.loc["customer_id", "name_hint"])
+    assert result.loc[
+        "referral_code", "unique_percentage"
+    ] == 95.85
+
+
+def test_high_uniqueness_numeric_measure_is_not_identifier() -> None:
+    dataframe = pd.DataFrame(
+        {
+            "measurement": list(range(100)),
+            "record_id": list(range(100)),
+        }
+    )
+
+    report = analyze_potential_identifiers(dataframe)
+
+    assert report["column"].tolist() == [
+        "record_id"
+    ]
+
+
+def test_high_cardinality_report_matches_sample(
+    sample_dataframe: pd.DataFrame,
+) -> None:
+    report = analyze_high_cardinality_categories(
+        sample_dataframe
+    )
+
+    assert set(report["column"]) == {
+        "customer_id",
+        "signup_date",
+        "referral_code",
+    }
+
+    result = report.set_index("column")
+
+    assert result.loc[
+        "customer_id", "unique_non_null"
+    ] == 200
+    assert result.loc[
+        "signup_date", "unique_percentage"
+    ] == 90.29
+    assert result.loc[
+        "referral_code", "unique_non_null"
+    ] == 185
+
+
+def test_high_cardinality_thresholds_are_configurable() -> None:
+    dataframe = pd.DataFrame(
+        {
+            "category": [
+                f"group-{index % 10}"
+                for index in range(100)
+            ]
+        }
+    )
+
+    default_report = (
+        analyze_high_cardinality_categories(
+            dataframe
+        )
+    )
+    assert default_report.empty
+
+    custom_report = (
+        analyze_high_cardinality_categories(
+            dataframe,
+            config=QualityCheckConfig(
+                high_cardinality_min_unique_count=10,
+                high_cardinality_min_unique_pct=10.0,
+            ),
+        )
+    )
+    assert custom_report["column"].tolist() == [
+        "category"
+    ]
+
+
+def test_numeric_outlier_report_matches_sample(
+    sample_dataframe: pd.DataFrame,
+) -> None:
+    report = analyze_numeric_outliers(
+        sample_dataframe
+    )
+
+    assert set(report["column"]) == {
+        "age",
+        "annual_income",
+        "purchase_amount",
+    }
+
+    result = report.set_index("column")
+
+    assert result.loc["age", "outlier_count"] == 1
+    assert result.loc["age", "maximum_outlier"] == 150.0
+    assert result.loc[
+        "annual_income", "maximum_outlier"
+    ] == 5_000_000.0
+    assert result.loc[
+        "purchase_amount", "maximum_outlier"
+    ] == 250_000.0
+    assert result.loc[
+        "annual_income", "method"
+    ] == "IQR"
+
+
+def test_numeric_outlier_check_can_include_clean_columns() -> None:
+    dataframe = pd.DataFrame(
+        {
+            "clean": [1, 2, 3, 4, 5],
+            "label": ["a", "b", "c", "d", "e"],
+        }
+    )
+
+    issue_only = analyze_numeric_outliers(dataframe)
+    assert issue_only.empty
+
+    full_report = analyze_numeric_outliers(
+        dataframe,
+        include_clean=True,
+    )
+    assert full_report["column"].tolist() == ["clean"]
+    assert full_report.iloc[0]["severity"] == "PASS"
+
+
+def test_advanced_quality_check_bundle(
+    sample_dataframe: pd.DataFrame,
+) -> None:
+    results = run_advanced_quality_checks(
+        sample_dataframe
+    )
+
+    assert set(results) == {
+        "near_constant_columns",
+        "potential_identifiers",
+        "high_cardinality_categories",
+        "numeric_outliers",
+    }
+
+
 def test_basic_quality_check_bundle(
     sample_dataframe: pd.DataFrame,
 ) -> None:
@@ -192,6 +389,25 @@ def test_basic_quality_check_bundle(
         "missing_values",
         "duplicates",
         "constant_columns",
+    }
+
+
+def test_all_quality_check_bundle(
+    sample_dataframe: pd.DataFrame,
+) -> None:
+    results = run_all_quality_checks(
+        sample_dataframe
+    )
+
+    assert set(results) == {
+        "overview",
+        "missing_values",
+        "duplicates",
+        "constant_columns",
+        "near_constant_columns",
+        "potential_identifiers",
+        "high_cardinality_categories",
+        "numeric_outliers",
     }
 
 
