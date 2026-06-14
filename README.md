@@ -352,23 +352,23 @@ Readiness gates may downgrade the final status.
 
 ## Dashboard Overview
 
-*Add screenshot here*
+![Dashboard Overview](assets/screenshots/dashboard-overview.png)
 
 ## Quality Summary
 
-*Add screenshot here*
+![Quality Summary](assets/screenshots/quality-summary.png)
 
 ## Issues Dashboard
 
-*Add screenshot here*
+![Issues Dashboard](assets/screenshots/issues-dashboard.png)
 
 ## Recommendations Tab
 
-*Add screenshot here*
+![Recommendations Tab](assets/screenshots/recommendations-tab.png)
 
 ## AI Copilot
 
-*Add screenshot here*
+![AI Copilot](assets/screenshots/ai-copilot.png)
 
 ---
 
