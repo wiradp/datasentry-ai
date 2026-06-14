@@ -1,8 +1,11 @@
-[server]
-maxUploadSize = 20
-
-[browser]
-gatherUsageStats = false
-
 [theme]
-base = "light"
+base = "dark"
+primaryColor = "#4F8BF9"
+backgroundColor = "#000000"
+secondaryBackgroundColor = "#111111"
+textColor = "#F5F5F5"
+
+[theme.sidebar]
+backgroundColor = "#080808"
+secondaryBackgroundColor = "#121212"
+textColor = "#F5F5F5"
