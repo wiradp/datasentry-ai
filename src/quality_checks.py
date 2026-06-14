@@ -56,6 +56,13 @@ class QualityCheckConfig:
     outlier_medium_max_pct: float = 5.0
     outlier_high_max_pct: float = 10.0
 
+    category_inconsistency_low_max_pct: float = 5.0
+    category_inconsistency_medium_max_pct: float = 20.0
+
+    numeric_like_text_min_parse_pct: float = 90.0
+    datetime_like_text_min_parse_pct: float = 80.0
+    datetime_mixed_format_min_count: int = 2
+
     def __post_init__(self) -> None:
         ordered_threshold_groups = {
             "missing": (
@@ -107,6 +114,18 @@ class QualityCheckConfig:
             "high_cardinality_high_min_unique_pct": (
                 self.high_cardinality_high_min_unique_pct
             ),
+            "category_inconsistency_low_max_pct": (
+                self.category_inconsistency_low_max_pct
+            ),
+            "category_inconsistency_medium_max_pct": (
+                self.category_inconsistency_medium_max_pct
+            ),
+            "numeric_like_text_min_parse_pct": (
+                self.numeric_like_text_min_parse_pct
+            ),
+            "datetime_like_text_min_parse_pct": (
+                self.datetime_like_text_min_parse_pct
+            ),
         }
 
         for name, value in percentage_fields.items():
@@ -141,6 +160,19 @@ class QualityCheckConfig:
         if self.outlier_iqr_multiplier <= 0:
             raise ValueError(
                 "outlier_iqr_multiplier must be greater than 0."
+            )
+
+        if (
+            self.category_inconsistency_medium_max_pct
+            < self.category_inconsistency_low_max_pct
+        ):
+            raise ValueError(
+                "category inconsistency thresholds must be ordered."
+            )
+
+        if self.datetime_mixed_format_min_count < 2:
+            raise ValueError(
+                "datetime_mixed_format_min_count must be at least 2."
             )
 
 
@@ -1348,6 +1380,606 @@ def analyze_numeric_outliers(
     return report
 
 
+
+def _normalize_category_value(value: Any) -> str:
+    """Normalize text for comparison without changing source data."""
+
+    collapsed = re.sub(
+        r"\s+",
+        " ",
+        str(value).strip(),
+    )
+
+    return collapsed.casefold()
+
+
+def _collapse_whitespace(value: Any) -> str:
+    """Trim and collapse repeated whitespace for diagnostics."""
+
+    return re.sub(
+        r"\s+",
+        " ",
+        str(value).strip(),
+    )
+
+
+def _category_inconsistency_severity(
+    affected_percentage: float,
+    config: QualityCheckConfig,
+) -> str:
+    """Map affected category percentage to a heuristic severity."""
+
+    if (
+        affected_percentage
+        <= config.category_inconsistency_low_max_pct
+    ):
+        return "LOW"
+
+    if (
+        affected_percentage
+        <= config.category_inconsistency_medium_max_pct
+    ):
+        return "MEDIUM"
+
+    return "HIGH"
+
+
+def analyze_category_consistency(
+    dataframe: pd.DataFrame,
+    *,
+    config: QualityCheckConfig | None = None,
+    max_example_variants: int = 10,
+) -> pd.DataFrame:
+    """
+    Detect text categories that differ only by case or whitespace.
+
+    The check is read-only. It reports candidate canonical groups but
+    does not replace any source values.
+    """
+
+    _validate_dataframe(dataframe)
+
+    if max_example_variants < 2:
+        raise ValueError(
+            "max_example_variants must be at least 2."
+        )
+
+    active_config = config or QualityCheckConfig()
+    records: list[dict[str, Any]] = []
+
+    for column in dataframe.columns:
+        series = dataframe[column]
+
+        if not (
+            isinstance(series.dtype, pd.CategoricalDtype)
+            or is_object_dtype(series.dtype)
+            or is_string_dtype(series.dtype)
+        ):
+            continue
+
+        non_null = series.dropna()
+        non_null_count = int(non_null.shape[0])
+
+        if non_null_count == 0:
+            continue
+
+        grouped_values: dict[str, dict[str, int]] = {}
+
+        for value in non_null.tolist():
+            raw_value = str(value)
+            normalized_value = _normalize_category_value(
+                raw_value
+            )
+
+            if not normalized_value:
+                continue
+
+            variant_counts = grouped_values.setdefault(
+                normalized_value,
+                {},
+            )
+
+            variant_counts[raw_value] = (
+                variant_counts.get(raw_value, 0) + 1
+            )
+
+        for normalized_value, variant_counts in (
+            grouped_values.items()
+        ):
+            if len(variant_counts) < 2:
+                continue
+
+            variants_sorted = sorted(
+                variant_counts,
+                key=lambda value: (
+                    -variant_counts[value],
+                    value.casefold(),
+                    value,
+                ),
+            )
+
+            affected_count = int(
+                sum(variant_counts.values())
+            )
+            affected_percentage = _percentage(
+                affected_count,
+                non_null_count,
+            )
+
+            collapsed_variants = {
+                _collapse_whitespace(value)
+                for value in variant_counts
+            }
+
+            whitespace_variant_detected = any(
+                value != _collapse_whitespace(value)
+                for value in variant_counts
+            )
+
+            case_variant_detected = (
+                len(collapsed_variants) > 1
+                and len(
+                    {
+                        value.casefold()
+                        for value in collapsed_variants
+                    }
+                )
+                == 1
+            )
+
+            severity = _category_inconsistency_severity(
+                affected_percentage,
+                active_config,
+            )
+
+            records.append(
+                {
+                    "column": str(column),
+                    "dtype": str(series.dtype),
+                    "status": "CATEGORY_INCONSISTENCY",
+                    "severity": severity,
+                    "normalized_value": normalized_value,
+                    "variant_count": len(variant_counts),
+                    "variants": [
+                        _safe_scalar(value)
+                        for value in variants_sorted[
+                            :max_example_variants
+                        ]
+                    ],
+                    "variant_frequencies": {
+                        value: int(variant_counts[value])
+                        for value in variants_sorted[
+                            :max_example_variants
+                        ]
+                    },
+                    "affected_count": affected_count,
+                    "affected_percentage": (
+                        affected_percentage
+                    ),
+                    "non_null_count": non_null_count,
+                    "whitespace_variant_detected": (
+                        whitespace_variant_detected
+                    ),
+                    "case_variant_detected": (
+                        case_variant_detected
+                    ),
+                    "recommendation": (
+                        "Confirm the intended canonical label, then "
+                        "standardize case and surrounding whitespace "
+                        "before grouping or encoding."
+                    ),
+                }
+            )
+
+    columns = [
+        "column",
+        "dtype",
+        "status",
+        "severity",
+        "normalized_value",
+        "variant_count",
+        "variants",
+        "variant_frequencies",
+        "affected_count",
+        "affected_percentage",
+        "non_null_count",
+        "whitespace_variant_detected",
+        "case_variant_detected",
+        "recommendation",
+    ]
+
+    report = pd.DataFrame(records, columns=columns)
+
+    if not report.empty:
+        severity_rank = {
+            "HIGH": 0,
+            "MEDIUM": 1,
+            "LOW": 2,
+        }
+
+        report = (
+            report.assign(
+                _severity_rank=report["severity"].map(
+                    severity_rank
+                )
+            )
+            .sort_values(
+                by=[
+                    "_severity_rank",
+                    "affected_percentage",
+                    "column",
+                    "normalized_value",
+                ],
+                ascending=[True, False, True, True],
+                kind="stable",
+            )
+            .drop(columns="_severity_rank")
+            .reset_index(drop=True)
+        )
+
+    return report
+
+
+_DATE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    (
+        "ISO_DATETIME",
+        re.compile(
+            r"^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}"
+        ),
+    ),
+    (
+        "YYYY-MM-DD",
+        re.compile(r"^\d{4}-\d{2}-\d{2}$"),
+    ),
+    (
+        "YYYY/MM/DD",
+        re.compile(r"^\d{4}/\d{2}/\d{2}$"),
+    ),
+    (
+        "SLASH_DATE",
+        re.compile(r"^\d{1,2}/\d{1,2}/\d{4}$"),
+    ),
+    (
+        "MON_DD_YYYY",
+        re.compile(
+            r"^[A-Za-z]{3,9}\s+\d{1,2},\s+\d{4}$"
+        ),
+    ),
+    (
+        "DD_MON_YYYY",
+        re.compile(
+            r"^\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4}$"
+        ),
+    ),
+)
+
+
+def _date_format_label(value: str) -> str | None:
+    """Return a conservative date-format label for a text value."""
+
+    stripped = value.strip()
+
+    for label, pattern in _DATE_PATTERNS:
+        if pattern.fullmatch(stripped):
+            return label
+
+    return None
+
+
+def _looks_like_unnamed_column(column: Any) -> bool:
+    """Return whether a column name resembles an exported index."""
+
+    normalized = str(column).strip().casefold()
+
+    return bool(
+        re.match(r"^unnamed(?::|\s|$)", normalized)
+    )
+
+
+def _looks_like_datetime_name(column: Any) -> bool:
+    """Return whether a column name suggests date/time semantics."""
+
+    normalized = re.sub(
+        r"[^a-z0-9]+",
+        "_",
+        str(column).strip().casefold(),
+    ).strip("_")
+
+    tokens = set(normalized.split("_"))
+
+    return bool(
+        tokens
+        & {
+            "date",
+            "datetime",
+            "time",
+            "timestamp",
+            "created",
+            "updated",
+            "dob",
+        }
+    )
+
+
+def analyze_data_type_warnings(
+    dataframe: pd.DataFrame,
+    *,
+    config: QualityCheckConfig | None = None,
+    max_example_values: int = 5,
+) -> pd.DataFrame:
+    """
+    Detect likely schema issues without coercing source columns.
+
+    Current warnings cover unnamed index-like columns, numeric-looking
+    text, datetime-looking text, mixed date formats, and invalid values
+    within otherwise parseable text columns.
+    """
+
+    _validate_dataframe(dataframe)
+
+    if max_example_values < 0:
+        raise ValueError(
+            "max_example_values cannot be negative."
+        )
+
+    active_config = config or QualityCheckConfig()
+    records: list[dict[str, Any]] = []
+
+    for column in dataframe.columns:
+        series = dataframe[column]
+        column_name = str(column)
+        non_null_count = int(series.notna().sum())
+
+        if _looks_like_unnamed_column(column_name):
+            records.append(
+                {
+                    "column": column_name,
+                    "dtype": str(series.dtype),
+                    "status": "UNNAMED_COLUMN",
+                    "severity": "MEDIUM",
+                    "inferred_type": "INDEX_ARTIFACT",
+                    "non_null_count": non_null_count,
+                    "parse_success_count": None,
+                    "parse_success_percentage": None,
+                    "invalid_count": None,
+                    "invalid_percentage": None,
+                    "detected_format_count": None,
+                    "detected_formats": [],
+                    "example_invalid_values": [],
+                    "recommendation": (
+                        "Confirm whether this is an exported DataFrame "
+                        "index. Exclude it only after verifying that it "
+                        "has no business meaning."
+                    ),
+                }
+            )
+
+        if not (
+            isinstance(series.dtype, pd.CategoricalDtype)
+            or is_object_dtype(series.dtype)
+            or is_string_dtype(series.dtype)
+        ):
+            continue
+
+        text_values = (
+            series.dropna()
+            .astype(str)
+            .str.strip()
+        )
+        text_values = text_values.loc[
+            text_values.ne("")
+        ]
+        text_count = int(text_values.shape[0])
+
+        if text_count == 0:
+            continue
+
+        numeric_values = pd.to_numeric(
+            text_values,
+            errors="coerce",
+        )
+        numeric_success_count = int(
+            numeric_values.notna().sum()
+        )
+        numeric_success_percentage = _percentage(
+            numeric_success_count,
+            text_count,
+        )
+
+        if (
+            numeric_success_count > 0
+            and numeric_success_percentage
+            >= active_config.numeric_like_text_min_parse_pct
+        ):
+            numeric_invalid_mask = numeric_values.isna()
+            numeric_invalid_values = (
+                text_values.loc[numeric_invalid_mask]
+                .drop_duplicates()
+                .head(max_example_values)
+                .tolist()
+            )
+            numeric_invalid_count = int(
+                numeric_invalid_mask.sum()
+            )
+
+            records.append(
+                {
+                    "column": column_name,
+                    "dtype": str(series.dtype),
+                    "status": "NUMERIC_LIKE_TEXT",
+                    "severity": (
+                        "MEDIUM"
+                        if numeric_invalid_count
+                        else "LOW"
+                    ),
+                    "inferred_type": "NUMERIC",
+                    "non_null_count": text_count,
+                    "parse_success_count": (
+                        numeric_success_count
+                    ),
+                    "parse_success_percentage": (
+                        numeric_success_percentage
+                    ),
+                    "invalid_count": numeric_invalid_count,
+                    "invalid_percentage": _percentage(
+                        numeric_invalid_count,
+                        text_count,
+                    ),
+                    "detected_format_count": None,
+                    "detected_formats": [],
+                    "example_invalid_values": [
+                        _safe_scalar(value)
+                        for value in numeric_invalid_values
+                    ],
+                    "recommendation": (
+                        "Validate non-numeric tokens, then convert the "
+                        "column to a numeric dtype before numerical "
+                        "analysis."
+                    ),
+                }
+            )
+
+        format_labels = text_values.map(
+            _date_format_label
+        )
+        date_success_mask = format_labels.notna()
+        date_success_count = int(
+            date_success_mask.sum()
+        )
+        date_success_percentage = _percentage(
+            date_success_count,
+            text_count,
+        )
+        detected_formats = sorted(
+            {
+                str(label)
+                for label in format_labels.dropna().tolist()
+            }
+        )
+
+        datetime_candidate = (
+            _looks_like_datetime_name(column_name)
+            or date_success_percentage
+            >= active_config.datetime_like_text_min_parse_pct
+        )
+
+        if (
+            datetime_candidate
+            and date_success_count > 0
+            and date_success_percentage
+            >= active_config.datetime_like_text_min_parse_pct
+        ):
+            date_invalid_mask = ~date_success_mask
+            date_invalid_values = (
+                text_values.loc[date_invalid_mask]
+                .drop_duplicates()
+                .head(max_example_values)
+                .tolist()
+            )
+            date_invalid_count = int(
+                date_invalid_mask.sum()
+            )
+            mixed_formats = (
+                len(detected_formats)
+                >= active_config.datetime_mixed_format_min_count
+            )
+
+            if mixed_formats:
+                status = "MIXED_DATETIME_FORMATS"
+                severity = "HIGH"
+                recommendation = (
+                    "Standardize the accepted date format and parse "
+                    "the column explicitly. Review invalid values "
+                    "before conversion."
+                )
+            else:
+                status = "DATETIME_LIKE_TEXT"
+                severity = (
+                    "MEDIUM"
+                    if date_invalid_count
+                    else "LOW"
+                )
+                recommendation = (
+                    "Parse the column to a datetime dtype using an "
+                    "explicit format after reviewing invalid values."
+                )
+
+            records.append(
+                {
+                    "column": column_name,
+                    "dtype": str(series.dtype),
+                    "status": status,
+                    "severity": severity,
+                    "inferred_type": "DATETIME",
+                    "non_null_count": text_count,
+                    "parse_success_count": date_success_count,
+                    "parse_success_percentage": (
+                        date_success_percentage
+                    ),
+                    "invalid_count": date_invalid_count,
+                    "invalid_percentage": _percentage(
+                        date_invalid_count,
+                        text_count,
+                    ),
+                    "detected_format_count": len(
+                        detected_formats
+                    ),
+                    "detected_formats": detected_formats,
+                    "example_invalid_values": [
+                        _safe_scalar(value)
+                        for value in date_invalid_values
+                    ],
+                    "recommendation": recommendation,
+                }
+            )
+
+    columns = [
+        "column",
+        "dtype",
+        "status",
+        "severity",
+        "inferred_type",
+        "non_null_count",
+        "parse_success_count",
+        "parse_success_percentage",
+        "invalid_count",
+        "invalid_percentage",
+        "detected_format_count",
+        "detected_formats",
+        "example_invalid_values",
+        "recommendation",
+    ]
+
+    report = pd.DataFrame(records, columns=columns)
+
+    if not report.empty:
+        severity_rank = {
+            "CRITICAL": 0,
+            "HIGH": 1,
+            "MEDIUM": 2,
+            "LOW": 3,
+        }
+
+        report = (
+            report.assign(
+                _severity_rank=report["severity"].map(
+                    severity_rank
+                )
+            )
+            .sort_values(
+                by=[
+                    "_severity_rank",
+                    "column",
+                    "status",
+                ],
+                kind="stable",
+            )
+            .drop(columns="_severity_rank")
+            .reset_index(drop=True)
+        )
+
+    return report
+
 def run_basic_quality_checks(
     dataframe: pd.DataFrame,
     *,
@@ -1378,7 +2010,7 @@ def run_advanced_quality_checks(
     *,
     config: QualityCheckConfig | None = None,
 ) -> dict[str, pd.DataFrame]:
-    """Run the four advanced deterministic quality checks."""
+    """Run advanced deterministic and schema quality checks."""
 
     active_config = config or QualityCheckConfig()
 
@@ -1404,6 +2036,18 @@ def run_advanced_quality_checks(
         "numeric_outliers": analyze_numeric_outliers(
             dataframe,
             config=active_config,
+        ),
+        "category_consistency": (
+            analyze_category_consistency(
+                dataframe,
+                config=active_config,
+            )
+        ),
+        "data_type_warnings": (
+            analyze_data_type_warnings(
+                dataframe,
+                config=active_config,
+            )
         ),
     }
 

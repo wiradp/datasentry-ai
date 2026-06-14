@@ -6,7 +6,9 @@ import pytest
 from src.quality_checks import (
     QualityCheckConfig,
     QualityCheckError,
+    analyze_category_consistency,
     analyze_constant_columns,
+    analyze_data_type_warnings,
     analyze_duplicates,
     analyze_high_cardinality_categories,
     analyze_missing_values,
@@ -374,6 +376,8 @@ def test_advanced_quality_check_bundle(
         "potential_identifiers",
         "high_cardinality_categories",
         "numeric_outliers",
+        "category_consistency",
+        "data_type_warnings",
     }
 
 
@@ -408,6 +412,8 @@ def test_all_quality_check_bundle(
         "potential_identifiers",
         "high_cardinality_categories",
         "numeric_outliers",
+        "category_consistency",
+        "data_type_warnings",
     }
 
 
@@ -421,3 +427,155 @@ def test_rejects_empty_dataframe() -> None:
         match="data rows",
     ):
         get_dataset_overview(dataframe)
+
+
+
+def test_category_consistency_matches_sample(
+    sample_dataframe: pd.DataFrame,
+) -> None:
+    report = analyze_category_consistency(
+        sample_dataframe
+    )
+
+    assert len(report) == 6
+    assert set(report["column"]) == {
+        "city",
+        "membership_type",
+    }
+
+    jakarta = report.loc[
+        (report["column"] == "city")
+        & (report["normalized_value"] == "jakarta")
+    ].iloc[0]
+
+    assert jakarta["variant_count"] == 4
+    assert jakarta["affected_count"] == 72
+    assert jakarta["affected_percentage"] == 34.62
+    assert bool(jakarta["whitespace_variant_detected"])
+    assert bool(jakarta["case_variant_detected"])
+    assert set(jakarta["variants"]) == {
+        "Jakarta",
+        "jakarta",
+        " Jakarta ",
+        "JAKARTA",
+    }
+
+    gold = report.loc[
+        (report["column"] == "membership_type")
+        & (report["normalized_value"] == "gold")
+    ].iloc[0]
+
+    assert gold["variant_count"] == 2
+    assert gold["affected_count"] == 66
+    assert gold["severity"] == "HIGH"
+
+
+def test_category_consistency_ignores_clean_categories() -> None:
+    dataframe = pd.DataFrame(
+        {
+            "category": ["A", "B", "C", "A"],
+            "value": [1, 2, 3, 4],
+        }
+    )
+
+    report = analyze_category_consistency(dataframe)
+
+    assert report.empty
+
+
+def test_category_consistency_detects_whitespace_only() -> None:
+    dataframe = pd.DataFrame(
+        {
+            "category": ["Gold", " Gold ", "Gold"],
+        }
+    )
+
+    report = analyze_category_consistency(dataframe)
+
+    assert len(report) == 1
+    assert bool(
+        report.iloc[0]["whitespace_variant_detected"]
+    )
+    assert not bool(
+        report.iloc[0]["case_variant_detected"]
+    )
+
+
+def test_data_type_warnings_match_sample(
+    sample_dataframe: pd.DataFrame,
+) -> None:
+    report = analyze_data_type_warnings(
+        sample_dataframe
+    )
+
+    result = report.set_index(["column", "status"])
+
+    assert set(result.index) == {
+        ("Unnamed: 0", "UNNAMED_COLUMN"),
+        ("monthly_visits", "NUMERIC_LIKE_TEXT"),
+        ("signup_date", "MIXED_DATETIME_FORMATS"),
+    }
+
+    monthly = result.loc[
+        ("monthly_visits", "NUMERIC_LIKE_TEXT")
+    ]
+    assert monthly["parse_success_count"] == 201
+    assert monthly["parse_success_percentage"] == 98.05
+    assert monthly["invalid_count"] == 4
+    assert monthly["example_invalid_values"] == [
+        "unknown"
+    ]
+
+    signup = result.loc[
+        ("signup_date", "MIXED_DATETIME_FORMATS")
+    ]
+    assert signup["parse_success_count"] == 204
+    assert signup["parse_success_percentage"] == 99.03
+    assert signup["invalid_count"] == 2
+    assert signup["detected_format_count"] == 3
+    assert set(signup["detected_formats"]) == {
+        "YYYY-MM-DD",
+        "SLASH_DATE",
+        "MON_DD_YYYY",
+    }
+    assert signup["example_invalid_values"] == [
+        "not_available"
+    ]
+
+
+def test_data_type_warnings_ignore_native_types() -> None:
+    dataframe = pd.DataFrame(
+        {
+            "value": [1, 2, 3],
+            "event_date": pd.to_datetime(
+                ["2026-01-01", "2026-01-02", "2026-01-03"]
+            ),
+            "category": ["a", "b", "c"],
+        }
+    )
+
+    report = analyze_data_type_warnings(dataframe)
+
+    assert report.empty
+
+
+def test_numeric_like_threshold_is_configurable() -> None:
+    dataframe = pd.DataFrame(
+        {
+            "mixed": ["1", "2", "3", "bad", "bad"],
+        }
+    )
+
+    default_report = analyze_data_type_warnings(dataframe)
+    assert default_report.empty
+
+    custom_report = analyze_data_type_warnings(
+        dataframe,
+        config=QualityCheckConfig(
+            numeric_like_text_min_parse_pct=60.0,
+        ),
+    )
+
+    assert custom_report["status"].tolist() == [
+        "NUMERIC_LIKE_TEXT"
+    ]
