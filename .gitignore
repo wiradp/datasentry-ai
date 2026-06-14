@@ -26,3 +26,7 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
+
+# Personal project files
+Copy_of_AI_Agents_AVPN_IT_Data.ipynb
+Final Project - Data Scientist.pdf
