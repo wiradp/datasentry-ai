@@ -4,6 +4,12 @@ DataSentry AI is an AI-assisted data quality auditing application built with Str
 
 The project combines deterministic data quality analysis with a grounded AI copilot architecture. Instead of allowing the LLM to directly inspect uploaded datasets, DataSentry AI generates a structured audit report and exposes only read-only audit tools to Gemini. This design improves transparency, reduces hallucination risk, and ensures that factual answers remain traceable to deterministic audit results.
 
+## Live Demo
+
+Try the deployed app here:
+
+https://datasentry-ai.streamlit.app
+
 ---
 
 # Project Overview
@@ -415,7 +421,7 @@ Potential future enhancements:
 
 # Author
 
-**Wira DP**
+**[Wira Dhana Putra](https://wiradp.github.io/)**
 
 Career Switcher → Data Science, Machine Learning, and AI Engineering
 
