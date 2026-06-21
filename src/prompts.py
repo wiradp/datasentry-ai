@@ -92,10 +92,14 @@ class PromptProfile:
 _STYLE_INSTRUCTIONS = {
     ExplanationStyle.BEGINNER_FRIENDLY: dedent(
         """
-        - Use plain language and short paragraphs.
+        - Use plain language, short paragraphs, and a calm teaching tone.
+        - Start with the simplest answer first, then explain the reason.
         - Briefly define technical terms before using them.
         - Explain why each issue matters with a simple practical example.
-        - Avoid formulas and dense statistical terminology unless the user asks.
+        - Avoid formulas, code-like wording, JSON field names, and dense statistical terminology unless the user asks.
+        - Do not expose internal tool names, function names, raw tool fields, or implementation details such as get_quality_summary, overall_score, score_band_status, readiness_status, or readiness_gates.
+        - Translate internal audit fields into user-facing labels such as quality score, score category, final readiness status, reason, issue count, and recommended next step.
+        - Prefer simple explanations over audit-trace wording. Keep detailed tool evidence for technical-style answers.
         - Do not hide uncertainty behind confident-sounding language.
         """
     ).strip(),

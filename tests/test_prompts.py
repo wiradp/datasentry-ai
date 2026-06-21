@@ -112,9 +112,13 @@ def test_beginner_style_has_beginner_specific_guidance() -> None:
         )
     )
 
-    assert "Use plain language and short paragraphs." in prompt
+    assert "Use plain language, short paragraphs" in prompt
     assert "define technical terms" in prompt
     assert "simple practical example" in prompt
+    assert "Do not expose internal tool names" in prompt
+    assert "raw tool fields" in prompt
+    assert "Translate internal audit fields into user-facing labels" in prompt
+    assert "Keep detailed tool evidence for technical-style answers" in prompt
 
 
 def test_business_style_has_business_specific_guidance() -> None:
