@@ -26,6 +26,7 @@ from src.report_builder import (
     audit_report_to_json,
     build_audit_report,
 )
+from src.response_formatter import format_copilot_response
 from src.tools import AuditToolbox
 
 
@@ -1232,6 +1233,11 @@ def _render_copilot_tab(
         return
 
     if result["ok"]:
+        assistant_text = format_copilot_response(
+            str(result["text"]),
+            explanation_style=explanation_style,
+        )
+
         details = {
             "model": result.get("model"),
             "finish_reason": result.get(
@@ -1254,7 +1260,7 @@ def _render_copilot_tab(
         }
         _append_chat_record(
             role="assistant",
-            content=str(result["text"]),
+            content=assistant_text,
             details=details,
         )
     else:
