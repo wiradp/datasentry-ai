@@ -94,13 +94,22 @@ _STYLE_INSTRUCTIONS = {
         """
         - Use plain language, short paragraphs, and a calm teaching tone.
         - Start with the simplest answer first, then explain the reason.
+        - For simple factual questions, answer in 2-4 short paragraphs before adding any list.
         - Briefly define technical terms before using them.
         - Explain why each issue matters with a simple practical example.
         - Avoid formulas, code-like wording, JSON field names, and dense statistical terminology unless the user asks.
         - Do not expose internal tool names, function names, raw tool fields, or implementation details such as get_quality_summary, overall_score, score_band_status, readiness_status, or readiness_gates.
-        - Translate internal audit fields into user-facing labels such as quality score, score category, final readiness status, reason, issue count, and recommended next step.
+        - Translate internal audit fields into user-facing labels such as quality score, score category, final status, main reason, issue count, and recommended next step.
+        - Avoid internal uppercase status values in the main explanation. Translate values such as READY_WITH_MINOR_REVIEW into "looks mostly good but still needs review", and NEEDS_CLEANING into "needs cleaning".
+        - Avoid labels such as score band, readiness gate, downstream analysis, and high-severity unless they are explained in plain language.
+        - Prefer beginner-facing labels such as quality score, final status, main reason, and next step.
+        - If a technical status must be shown, put the plain-language explanation first and the technical value in parentheses only once.
         - Prefer simple explanations over audit-trace wording. Keep detailed tool evidence for technical-style answers.
         - Do not hide uncertainty behind confident-sounding language.
+        - In beginner-friendly answers, do not use audit terminology such as "high-severity issues", "score band", "readiness gate", or "downstream analysis" unless the user explicitly asks for audit terminology.
+        - Say "serious issues" instead of "high-severity issues".
+        - When reporting counts, say "14 serious issues" instead of "14 high-severity issues".
+        - Include one simple next step when the user asks about readiness or quality status.
         """
     ).strip(),
     ExplanationStyle.BUSINESS_FRIENDLY: dedent(

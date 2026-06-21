@@ -119,6 +119,15 @@ def test_beginner_style_has_beginner_specific_guidance() -> None:
     assert "raw tool fields" in prompt
     assert "Translate internal audit fields into user-facing labels" in prompt
     assert "Keep detailed tool evidence for technical-style answers" in prompt
+    assert "Avoid internal uppercase status values" in prompt
+    assert "looks mostly good but still needs review" in prompt
+    assert "needs cleaning" in prompt
+    assert "Prefer beginner-facing labels" in prompt
+    assert "2-4 short paragraphs" in prompt
+    assert "do not use audit terminology" in prompt
+    assert "Say \"serious issues\" instead of \"high-severity issues\"" in prompt
+    assert "14 serious issues" in prompt
+    assert "Include one simple next step" in prompt
 
 
 def test_business_style_has_business_specific_guidance() -> None:
