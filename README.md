@@ -1,18 +1,20 @@
-# DataSentry AI — Gemini-Powered Data Quality Copilot
+# 🤖 DataSentry AI — Gemini-Powered Data Quality Copilot
+
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-0077B5?style=for-the-badge&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/wira-dhana-putra/)
+[![Medium](https://img.shields.io/badge/Medium-12100E?style=for-the-badge&logo=medium&logoColor=white)](https://medium.com/@wiradp)
+[![Website](https://img.shields.io/badge/Website-000000?style=for-the-badge&logo=github&logoColor=white)](https://wiradp.github.io/)
 
 DataSentry AI is an AI-assisted data quality auditing application built with Streamlit, Python, and Google Gemini.
 
 The project combines deterministic data quality analysis with a grounded AI copilot architecture. Instead of allowing the LLM to directly inspect uploaded datasets, DataSentry AI generates a structured audit report and exposes only read-only audit tools to Gemini. This design improves transparency, reduces hallucination risk, and ensures that factual answers remain traceable to deterministic audit results.
 
-## Live Demo
+## 🌍 Live Demo
 
-Try the deployed app here:
-
-https://datasentry-ai.streamlit.app
+Try the deployed application here: [datasentry-ai.streamlit.app](https://datasentry-ai.streamlit.app)
 
 ---
 
-# Project Overview
+# 📌 Project Overview
 
 DataSentry AI helps analysts, data scientists, and business users quickly assess the quality of CSV datasets before using them for analytics, reporting, machine learning, or AI applications.
 
@@ -20,188 +22,105 @@ The application automatically evaluates dataset quality, identifies common issue
 
 ---
 
-# Business Problem
+# 💼 Business Problem
 
-Poor data quality is one of the most common causes of failed analytics and machine learning projects.
+Poor data quality is one of the most common causes of failed analytics and machine learning projects. 
 
-Common issues include:
+Common systemic issues include:
+* Missing values and high null-density
+* Duplicate records undermining statistical power
+* Extreme numerical outliers distorting models
+* Inconsistent categorical variables
+* Invalid data types causing structural computation failures
+* Identifier leakage risking data privacy
+* High-cardinality columns slowing inference
+* Poor overall schema usability
 
-* Missing values
-* Duplicate records
-* Outliers
-* Inconsistent categories
-* Invalid data types
-* Identifier leakage
-* High-cardinality columns
-* Poor schema usability
-
-Traditional data quality reviews are often manual, time-consuming, and difficult for non-technical stakeholders to interpret.
-
-DataSentry AI addresses this problem by combining deterministic quality auditing with explainable AI assistance.
+Traditional data quality reviews are often manual, time-consuming, and difficult for non-technical stakeholders to interpret. DataSentry AI addresses this problem by combining deterministic quality auditing with explainable AI assistance.
 
 ---
 
-# Solution Overview
+# 🏗️ Solution Overview & Architecture
 
-DataSentry AI performs two complementary functions:
+DataSentry AI performs two complementary, strictly isolated functions:
 
-1. Deterministic Audit Engine
+1. **Deterministic Audit Engine:** Calculates raw data quality metrics using Python backend data layers, generating a highly structured truth-report along with severity-aware scores.
+2. **AI Copilot Architecture:** Leverages Google Gemini models to interface exclusively with the read-only JSON layout metadata—preventing raw cell mutation or arbitrary text fabrication.
 
-   * Calculates data quality metrics using Python.
-   * Generates a structured audit report.
-   * Produces quality scores and readiness assessments.
+### Data Flow Pipeline
+```mermaid
+graph TD
+    A[CSV Upload] --> B[src/data_loader.py]
+    B -->|Validated DataFrame| C[src/quality_checks.py]
+    C --> D[src/quality_score.py]
+    D --> E[src/report_builder.py]
+    E -->|Structured Audit Report| F[src/tools.py]
+    F -->|Read-Only Audit Toolbox| G[src/gemini_client.py]
+    G -->|Gemini Function Calling Loop| H[app.py]
+    H --> I[Streamlit Dashboard]
 
-2. AI Copilot
+    style B fill:#1f2937,stroke:#333,stroke-width:1px,color:#fff
+    style F fill:#4b7bff,stroke:#333,stroke-width:1px,color:#fff
+    style G fill:#3ecf8e,stroke:#333,stroke-width:1px,color:#fff
 
-   * Uses Google Gemini.
-   * Accesses audit findings through read-only tools.
-   * Explains results, risks, and recommendations.
-   * Cannot modify data or fabricate audit results.
-
-This architecture separates factual computation from natural-language explanation.
-
----
-
-# Main Features
-
-## CSV Validation
-
-* File extension validation
-* File size validation
-* Empty file detection
-* Null-byte detection
-* Encoding detection
-* Delimiter detection
-* Duplicate header validation
-* Dataset fingerprinting
-
-## Data Quality Analysis
-
-* Dataset overview
-* Missing value analysis
-* Duplicate detection
-* Constant column detection
-* Near-constant column detection
-* Potential identifier detection
-* High-cardinality category detection
-* Numeric outlier detection
-* Category consistency analysis
-* Data type warning detection
-
-## Quality Scoring
-
-* Weighted quality score
-* Readiness assessment
-* Severity-aware penalties
-* Score band classification
-
-## AI Copilot
-
-* Gemini-powered assistant
-* Read-only tool architecture
-* Grounded responses
-* Tool activity tracking
-* Conversation history
-* Explanation style controls
-
-## Reporting
-
-* Structured audit report
-* JSON report download
-* Filtered issue export
-* Prioritized recommendations
-
----
-
-# System Architecture
-
-```text
-CSV Upload
-↓
-src/data_loader.py
-↓
-Validated DataFrame
-↓
-src/quality_checks.py
-↓
-src/quality_score.py
-↓
-src/report_builder.py
-↓
-Structured Audit Report
-↓
-src/tools.py
-↓
-Read-Only Audit Toolbox
-↓
-src/gemini_client.py
-↓
-Gemini Function Calling Loop
-↓
-app.py
-↓
-Streamlit Dashboard
 ```
 
-Core principle:
+### Core Execution Philosophy
 
-```text
-Python calculates facts.
-
-The audit report becomes the source of truth.
-
-Gemini explains the facts through read-only tools.
-```
+> 💡 **Core Principle:** Python calculates facts. The audit report becomes the absolute source of truth. Gemini explains the facts through strictly scoped read-only tools.
 
 ---
 
-# Gemini Tool Architecture
+# 🧠 Gemini Tool Architecture
 
-A major design goal of DataSentry AI is reducing hallucination risk.
+A major design goal of DataSentry AI is reducing hallucination risk. Instead of handing the raw, unchecked DataFrame directly to an LLM loop, DataSentry acts as a deterministic guardrail:
 
-Instead of providing the uploaded DataFrame directly to Gemini:
+```mermaid
+graph LR
+    User[User Question] --> Audit[Audit Report]
+    Audit --> Tools[Read-Only Tools]
+    Tools --> Gemini[Gemini Engine]
+    Gemini --> Answer[Grounded Answer]
 
-```text
-❌ User → Gemini → Answer
 ```
 
-DataSentry AI uses:
+### Available Architectural Tools (Read-Only):
 
-```text
-User
-↓
-Audit Report
-↓
-Read-Only Tools
-↓
-Gemini
-↓
-Answer
-```
-
-Benefits:
-
-* Improved factual consistency
-* Reduced hallucinations
-* Explainable audit results
-* Safer AI behavior
-* Clear separation between computation and explanation
-
-Available tools:
-
-* get_dataset_overview
-* get_quality_summary
-* get_missing_value_report
-* get_duplicate_report
-* get_column_quality_report
-* get_priority_issues
-* get_ml_readiness_report
-
-All tools are read-only.
+* `get_dataset_overview` — Returns row/column schema, shape, and compression fingerprints.
+* `get_quality_summary` — Extracts weighted overall degradation scores and thresholds.
+* `get_missing_value_report` — Delivers pinpoint analysis on null aggregates.
+* `get_duplicate_report` — Flags redundant record indexing.
+* `get_column_quality_report` — Provides specific type metrics for target dimensions.
+* `get_priority_issues` — Distills top-ranked alerts based on severity criteria.
+* `get_ml_readiness_report` — Validates compliance for target model ingestion pipelines.
 
 ---
 
-# Folder Structure
+# 🚀 Main Features
+
+### 📋 CSV Validation
+
+* File extension, size, and multi-encoding detection
+* Empty file and destructive null-byte pattern filtering
+* Automatic structure parsing and delimiter identification
+* Duplicate header validation and secure dataset fingerprinting
+
+### 📊 Data Quality Analysis
+
+* Dynamic dataset overview profiles
+* Advanced missing value clustering and numeric outlier evaluations
+* High-cardinality flags and potential accidental primary identifier tracking
+* Category consistency profiling and implicit mismatched type warning logs
+
+### 💯 Quality Scoring & Reporting
+
+* Severity-aware structural penalty models and score band ranking
+* Complete structured audit layout exportable to JSON layouts
+* Prioritized actionable transformation recommendation checklists
+
+---
+
+# 🗂️ Folder Structure
 
 ```text
 datasentry-ai/
@@ -224,43 +143,47 @@ datasentry-ai/
 ├── tests/
 ├── data/
 └── assets/
+
 ```
 
 ---
 
-# Installation
+# ⚙️ Installation & Setup
 
 Clone the repository:
 
 ```bash
 git clone <repository-url>
 cd datasentry-ai
+
 ```
 
-Create a virtual environment:
+Configure virtual environment isolation:
 
 ```bash
 python -m venv .venv
-```
 
-Activate the environment:
-
-```bash
+# On Linux/macOS
 source .venv/bin/activate
+
+# On Windows
+.venv\Scripts\activate
+
 ```
 
-Install dependencies:
+Install production engine dependencies:
 
 ```bash
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
+
 ```
 
 ---
 
-# Environment Variables
+# 🌐 Environment Variables
 
-Create a `.env` file:
+Create a local runtime configurations file named `.env` in the root environment:
 
 ```env
 GEMINI_API_KEY=your_api_key
@@ -272,164 +195,123 @@ GEMINI_MAX_TOOL_ROUNDS=5
 GEMINI_REQUEST_TIMEOUT_SECONDS=60
 DATASENTRY_DEFAULT_EXPLANATION_STYLE=business-friendly
 DATASENTRY_DEFAULT_ANALYSIS_FOCUS=general-data-quality
+
 ```
 
-Never commit `.env` files to source control.
+> ⚠️ **Security Warning:** Never commit operational production `.env` credentials to version source control trackers.
 
 ---
 
-# How to Run
+# 🕹️ Running the Application
 
-Launch the Streamlit application:
+Launch the local Streamlit dashboard execution loop:
 
 ```bash
 streamlit run app.py
+
 ```
 
-Default local URL:
-
-```text
-http://localhost:8501
-```
+Open your default web browser and access the interface at: `http://localhost:8501`
 
 ---
 
-# How to Test
+# 🧪 Testing Suite Validation
 
-Run the full test suite:
+Execute the testing layout validations using `pytest`:
 
 ```bash
 python -m pytest
+
 ```
 
-Additional validation:
+Run comprehensive static runtime verification builds:
 
 ```bash
 python -m pytest -q
 python -m compileall app.py src tests
 python -m pip check
 git diff --check
-```
 
-Latest validation result:
-
-```text
-212 passed
-No broken requirements found
 ```
 
 ---
 
-# Sample Audit Results
+# 📊 Sample Audit Results
 
-Sample dataset:
-
-```text
-data/sample_dirty_customers.csv
-```
-
-Expected results:
+When processing standard mock schemas (e.g., `data/sample_dirty_customers.csv`), the expected benchmark outputs are:
 
 ```text
-Quality score       : 92.02
-Score band          : READY_WITH_MINOR_REVIEW
-Final readiness     : NEEDS_CLEANING
+Quality score        : 92.02
+Score band           : READY_WITH_MINOR_REVIEW
+Final readiness      : NEEDS_CLEANING
 
-Total issues        : 27
+Total issues         : 27
+CRITICAL             : 0
+HIGH                 : 14
+MEDIUM               : 7
+LOW                  : 6
 
-CRITICAL            : 0
-HIGH                : 14
-MEDIUM              : 7
-LOW                 : 6
+Duplicate rows       : 8
+Duplicate percentage : 3.85%
 
-Duplicate rows      : 8
-Duplicate percentage: 3.85%
 ```
 
-Important:
-
-A high quality score does not override severe data quality issues.
-
-Readiness gates may downgrade the final status.
+*Note: A high baseline mathematical score does not override severe underlying structural issues; localized readiness gates can downgrade operational statuses accordingly.*
 
 ---
 
-# Screenshots
+# 📸 UI Screenshots
 
-## Dashboard Overview
+### Dashboard Overview
 
 ![Dashboard Overview](assets/screenshots/dashboard-overview.png)
 
-## Quality Summary
+### Quality Summary
 
 ![Quality Summary](assets/screenshots/quality-summary.png)
 
-## Issues Dashboard
+### Issues Dashboard
 
 ![Issues Dashboard](assets/screenshots/issues-dashboard.png)
 
-## Recommendations Tab
+### Recommendations Tab
 
 ![Recommendations Tab](assets/screenshots/recommendations-tab.png)
 
-## AI Copilot
+### AI Copilot Interaction
 
 ![AI Copilot](assets/screenshots/ai-copilot.png)
 
 ---
 
-# Limitations
+# 🛑 Limitations & Disclaimers
 
-Current limitations include:
+### Technical Limitations
 
-* CSV-focused workflow
-* No database connectivity
-* No multi-user support
-* No authentication system
-* No persistent conversation storage
-* Heuristic quality scoring
-* Gemini API dependency for copilot functionality
+* Strictly optimized for flat CSV workloads (no native relational database connectivity)
+* Stateless execution layout lacking explicit centralized authentication or persistent histories
+* Scoring behaviors are heuristic models rather than definitive formal certifications
 
----
+### Disclaimer
 
-# Disclaimer
-
-DataSentry AI is a portfolio and educational project.
-
-The quality score is a heuristic indicator and should not be interpreted as a formal certification of dataset quality.
-
-The AI copilot provides explanations and recommendations based on audit results and should not replace professional data governance, risk management, or compliance reviews.
+DataSentry AI is a portfolio and educational system. Heuristic quality indexing figures do not replace professional compliance architectures, enterprise-level risk assessments, or strict data governance standard workflows.
 
 ---
 
-# Future Improvements
+# 🔮 Future Roadmaps
 
-Potential future enhancements:
-
-* Support for Excel and Parquet files
-* Data profiling visualizations
-* Automated cleaning suggestions
-* Data drift monitoring
-* Database integrations
-* Multi-user authentication
-* Audit history tracking
-* Cloud deployment
-* Enterprise governance workflows
-* Model-assisted remediation recommendations
+* Integration for wider analytics structures (Parquet, Excel, Delta tables)
+* Automated proactive cleaning routine scripts generation
+* Tracking distribution drifts and validation monitoring timelines
+* Persistent model memory, secure authentication middleware, and cloud multi-tenant execution
 
 ---
 
-# Author
+# 👤 Author
 
 **[Wira Dhana Putra](https://wiradp.github.io/)**
 
-Career Switcher → Data Science, Machine Learning, and AI Engineering
+* Career Switcher → Moving purposefully into Data Science, Machine Learning, and AI Engineering.
+* Focus Pillars: Clean Data Architecture, Responsible AI Guardrails, and LLM Tool-Calling Implementations.
 
-Portfolio project focused on:
-
-* Data Quality
-* AI Applications
-* LLM Tool Calling
-* Streamlit Development
-* Python Engineering
-* Responsible AI Design
+---
